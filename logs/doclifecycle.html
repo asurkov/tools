@@ -1,0 +1,373 @@
+<html>
+<head>
+<style>
+.timeline-item {
+  display: inline-block;
+  margin: 10px;
+  width: 30%;
+  vertical-align: top;
+}
+.header {
+  padding: 5px;
+  border-top: 20px groove gray;
+  border-bottom: 3px groove gray;
+  margin: 2px;
+  -moz-border-image:linear-gradient(180deg, gray, AliceBlue);
+}
+
+.doc {
+  margin: 2px;
+}
+.children {
+  margin-left: 14px;
+}
+.table {
+  width: 100%;
+  display: table;
+  table-layout: fixed;
+}
+.row {
+  display: table-row;
+}
+.arrow-container {
+  min-width: 7px;
+  max-width: 7px;
+  width: 7px;
+  min-height: 10px;
+  padding-right: 2px;
+  display: table-cell;
+}
+.arrow {
+  min-width: 7px;
+  min-height: 10px;
+  border-left: 1px dotted black;
+  border-bottom: 1px dotted black;
+}
+
+.body {
+  background: linear-gradient(180deg, Cyan, CornflowerBlue);
+  display: table-cell;
+  overflow: hidden;
+}
+.latest {
+  outline: red solid 1px;
+  -moz-outline-radius: 30%;
+  margin: 2px;
+}
+.url {
+  display: inline-block;
+  vertical-align: middle;
+}
+.state {
+  min-width: 1em;
+  min-height: 1em;
+  vertical-align: middle;
+  margin: 3px;
+  border: 1px outset;
+  display: inline-block;
+}
+.loading {
+  background-color: yellow;
+}
+.loaded {
+  background-color: green;
+}
+.loaded-completely {
+  background-color: blue;
+}
+.busy {
+  background-color: Coral;
+  padding-left: 2px;
+  padding-right: 2px;
+}
+.notbusy {
+  background-color: Cornsilk;
+  padding-left: 2px;
+  padding-right: 2px;
+}
+</style>
+
+<script type="text/javascript">
+var gTimeLineFilter = [
+  "document creation finished",
+  "document shutdown",
+  "start document loading",
+  "document loaded",
+  "document loaded *completely*",
+  "handled 'busy false' event",
+  "handled 'busy true' event"
+];
+
+var gDocTimeList = [];
+
+function buildGraph()
+{
+  var tree = new treeObj();
+  for (var i = 0; i < gDocTimeList.length; i++) {
+    var docObj = gDocTimeList[i];
+    if (docObj.accDoc == "0x0") // ignore no accessible for now
+      continue;
+
+    switch (docObj.msg) {
+      case "document creation finished":
+        tree.appendItem(docObj);
+        break;
+      case "document shutdown":
+        tree.removeItem(docObj);
+        break;
+      case "start document loading":
+        tree.setState(docObj, "loading");
+        break;
+      case "document loaded":
+        tree.setState(docObj, "loaded");
+        break;
+      case "document loaded *completely*":
+        tree.setState(docObj, "loaded-completely");
+        break;
+      case "handled 'busy false' event":
+        tree.setState(docObj, "notbusy");
+        break;
+      case "handled 'busy true' event":
+        tree.setState(docObj, "busy");
+        break;
+    }
+
+    if (gTimeLineFilter.indexOf(docObj.msg) == -1)
+      continue;
+
+    // draw tree
+    var div = document.createElement("div");
+    div.setAttribute("class", "timeline-item");
+
+    // time and message
+    var headerDiv = document.createElement("div");
+    headerDiv.setAttribute("class", "header");
+    headerDiv.setAttribute("title", docObj.logText);
+    headerDiv.innerHTML = "<a name='" + docObj.time + docObj.msg + "'>" + docObj.time + "</a> : " + docObj.msg;
+    div.appendChild(headerDiv);
+
+    // documents
+    for (var j = 0; j < tree.children.length; j++)
+      drawTree(tree.children[j], docObj, div);
+
+    document.getElementById("graphCntr").appendChild(div);
+  }
+}
+
+function drawTree(aTree, aLatestDocObj, aContextElm, aIsRecursive)
+{
+  var docDiv = document.createElement("div");
+  docDiv.setAttribute("class", "doc");
+
+  // document itself
+  var tableDiv = document.createElement("div");
+  tableDiv.setAttribute("class", "table");
+  docDiv.appendChild(tableDiv);
+  var rowDiv = document.createElement("div");
+  rowDiv.setAttribute("class", "row");
+  tableDiv.appendChild(rowDiv);
+
+  var arrowCntrDiv = document.createElement("div");
+  arrowCntrDiv.setAttribute("class", "arrow-container");
+  rowDiv.appendChild(arrowCntrDiv);
+
+  if (aIsRecursive) {
+    var arrowDiv = document.createElement("div");
+    arrowDiv.setAttribute("class", "arrow");
+    arrowCntrDiv.appendChild(arrowDiv);
+  }
+  var bodyDiv = document.createElement("div");
+  bodyDiv.setAttribute("class", "body");
+  rowDiv.appendChild(bodyDiv);
+
+  // document states
+  for (var state in aTree.states) {
+    var isLatest = aTree.states[state] == aLatestDocObj;
+    if (!isLatest && state == "notbusy")
+      continue;
+
+    var stateDiv = document.createElement("div");
+    stateDiv.setAttribute("title", aTree.states[state].logText);
+
+    var classNames = "state " + state;
+    if (isLatest)
+      classNames += " latest";
+    stateDiv.setAttribute("class", classNames);
+
+    if (state == "busy")
+      stateDiv.textContent = "busy";
+    else if (state == "notbusy")
+      stateDiv.textContent = "not busy";
+
+    bodyDiv.appendChild(stateDiv);
+  }
+
+  // document URL
+  var bodyChildDiv = document.createElement("div");
+  bodyChildDiv.textContent = aTree.doc.accDoc + ": " + aTree.doc.uri;
+  bodyChildDiv.setAttribute("title", aTree.doc.logText);
+  var classNames = "url";
+  if (aTree.doc == aLatestDocObj)
+    classNames += " latest";
+  bodyChildDiv.setAttribute("class", classNames);
+  bodyDiv.appendChild(bodyChildDiv);
+
+  // document children
+  var childrenDiv = document.createElement("div");
+  childrenDiv.setAttribute("class", "children");
+  docDiv.appendChild(childrenDiv);
+
+  for (var i = 0; i < aTree.children.length; i++)
+    drawTree(aTree.children[i], aLatestDocObj, childrenDiv, true);
+
+  aContextElm.appendChild(docDiv);
+}
+
+function treeObj()
+{
+  this.appendItem = function appendItem(aDocObj)
+  {
+    var parentItem = this.findItem(aDocObj.parentAccDoc) || this;
+    var item = {
+      doc: aDocObj,
+      children: [],
+      states: {}
+    };
+    parentItem.children.push(item);
+  }
+
+  this.removeItem = function removeItem(aDocObj, aItem)
+  {
+    var item = aItem || this;
+    for (var i = 0; i < item.children.length; i++) {
+      var childItem = item.children[i];
+      if (childItem.doc.accDoc == aDocObj.accDoc) {
+        if (childItem.children.length != 0)
+          reportError("wrong order of doc tree shutdown!", aDocObj);
+
+        item.children.splice(i, 1);
+        return;
+      }
+
+      this.removeItem(aDocObj, childItem);
+    }
+  }
+
+  this.setState = function setState(aDocObj, aName)
+  {
+    var item = this.findItem(aDocObj.accDoc);
+    if (!item) {
+      reportError("no item for state!", aDocObj);
+      return;
+    }
+
+    if (aName in item.states)
+      reportError("overriding '" + aName + "' state!", aDocObj);
+
+    if (aName == "busy")
+      delete item.states["notbusy"];
+    else if (aName == "notbusy")
+      delete item.states["busy"];
+
+    item.states[aName] = aDocObj;
+  }
+
+  this.findItem = function findTreeItem(aDocObj, aItem)
+  {
+    var item = aItem || this;
+    for (var i = 0; i < item.children.length; i++) {
+      var childItem = item.children[i];
+      if (childItem.doc.accDoc == aDocObj)
+        return childItem;
+
+      childItem = this.findItem(aDocObj, childItem);
+      if (childItem)
+        return childItem;
+    }
+
+    return null;
+  }
+
+  this.children = [];
+}
+
+function analyse()
+{
+  var log = document.getElementById("ta").value;
+  document.getElementById("analyseCntr").setAttribute("hidden", "true");
+
+  var items = log.match(/A11Y[^]+?((?=A11Y)|$)/g);
+  for (var itemIdx = 0; itemIdx < items.length; itemIdx++) {
+    var item = items[itemIdx];
+
+    var title = item.match(/.*/m);
+    var msg = title[0].match(/\: ([^]+?)(?=\;)/)[1];
+    var time = title[0].match(/\d+\:\d+\.\d+/);
+
+    var body = item.match(/\{[^]+?(?=\})/)[0];
+    var DOMDocMatch = body.match(/DOM document.*?([0-9a-fx]+)/);
+    if (!DOMDocMatch) {
+      if (gTimeLineFilter.indexOf(msg) != -1)
+        reportError("Parsing error: no 'DOM document found!", { logText: item } );
+      continue;
+    }
+
+    var DOMDoc = body.match(/DOM document.*?([0-9a-fx]+)/)[1];
+    var accDocMatch = body.match(/acc document.*?([0-9a-fx]+)/);
+    var accDoc = accDocMatch ? accDocMatch[1] : "";
+    var uriMatch = body.match(/uri\: ([^]+?)(?=\n)/);
+    var uri = uriMatch ? uriMatch[1] : "";
+
+    var parentDOMDocMatch = body.match(/parent DOM document.*?([0-9a-fx]+)/);
+    var parentDOMDoc = parentDOMDocMatch ? parentDOMDocMatch[1] : "";
+    var parentAccDocMatch = body.match(/parent acc document.*?([0-9a-fx]+)/);
+    var parentAccDoc = parentAccDocMatch ? parentAccDocMatch[1] : "";
+    var parentUriLine = body.match(/uri\: [^]+?(?=\n)/);
+
+    var docObj = {
+      msg: msg,
+      DOMDoc: DOMDoc,
+      accDoc: accDoc,
+      parentAccDoc: parentAccDoc,
+      uri: uri,
+      time: time,
+      logText: item
+    };
+    gDocTimeList.push(docObj);
+  }
+
+  buildGraph();
+}
+
+function logHere(aMsg)
+{
+  document.getElementById("log").textContent += aMsg + "\n";
+}
+
+function reportError(aMsg, aDocObj)
+{
+  var errorText = ""
+  if (aDocObj.time)
+    errorText = "Error: <a href='#" + aDocObj.time + aDocObj.msg + "'>" + aMsg + "</a>";
+  else
+    errorText = aMsg;
+
+  errorText += "<pre>" + aDocObj.logText + "</pre>"
+
+  var errorDiv = document.createElement("div");
+  errorDiv.innerHTML = errorText;
+  document.getElementById("errors").appendChild(errorDiv);
+}
+</script>
+</head>
+<body>
+<div id="analyseCntr">
+  <textarea id="ta" style="width: 100%; height: 80%"></textarea>
+  <button onclick="analyse();">analyse</button>
+</div>
+<div id="graphCntr">
+</div>
+<div id="errors"></div>
+<pre id="log"></pre>
+</body>
+</html>
